@@ -177,10 +177,18 @@ export const Profile: React.FC = () => {
 
       {/* Account Details */}
       <div style={{ marginBottom: '1.75rem' }}>
-        <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--slate-900)', marginBottom: '0.5rem', textTransform: 'capitalize' }}>
-          {effectiveRole === 'doctor' ? 'Doctor' : 'Patient'}
+        <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--slate-900)', marginBottom: '0.5rem' }}>
+          {effectiveRole === 'doctor' ? 'Professional' : 'Personal Information'}
         </h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.9rem' }}>
+          <div>
+            <span style={{ fontWeight: 600, color: 'var(--slate-500)', marginRight: '0.5rem' }}>
+              {effectiveRole === 'doctor' ? 'Doctor ID:' : 'Patient ID:'}
+            </span>
+            <span style={{ fontWeight: 700, fontFamily: 'monospace', color: 'var(--primary-600)' }}>
+              {effectivePublicId}
+            </span>
+          </div>
           <div>
             <span style={{ fontWeight: 600, color: 'var(--slate-500)', marginRight: '0.5rem' }}>Username:</span>
             <span style={{ fontWeight: 600, color: 'var(--slate-800)' }}>@{effectiveUsername}</span>
@@ -196,7 +204,7 @@ export const Profile: React.FC = () => {
       <form onSubmit={handleSave} className="card">
         <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--slate-800)', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <User size={18} color="var(--primary-600)" />
-          Personal & Professional Information
+          {effectiveRole === 'doctor' ? 'Practice & Clinical Details' : 'Profile Details'}
         </h3>
 
         <div className="form-group">
