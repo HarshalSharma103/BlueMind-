@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabaseClient';
 import type { DoctorProfile, PatientProfile } from '../../types';
-import { User, Shield, CheckCircle2, AlertCircle, Save } from 'lucide-react';
+import { User, CheckCircle2, AlertCircle, Save } from 'lucide-react';
 
 export const Profile: React.FC = () => {
   const { profile, user, refreshProfile, loading: authLoading } = useAuth();
@@ -156,70 +156,40 @@ export const Profile: React.FC = () => {
         </div>
       )}
 
-      {/* Identity Card (Immutable identifiers) */}
-      <div className="card" style={{ marginBottom: '1.5rem', background: '#f8fafc' }}>
-        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--slate-800)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Shield size={18} color="var(--primary-600)" />
-          Authoritative Identity & Credentials
-        </h3>
-        {!profile && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            padding: '1rem',
-            background: 'var(--warning-bg, #fffbeb)',
-            border: '1px solid var(--warning-border, #fde68a)',
-            borderRadius: 'var(--radius-md)',
-            color: 'var(--warning-text, #92400e)',
-            marginBottom: '1.5rem'
-          }}>
-            <AlertCircle size={20} style={{ flexShrink: 0 }} />
-            <div style={{ fontSize: '0.875rem' }}>
-              <strong>Profile Setup in Progress:</strong> Your profile record has not yet been initialized in the database. Save your personal details below to establish your profile.
-            </div>
-          </div>
-        )}
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-          <div>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase' }}>
-              Public ID
-            </div>
-            <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--primary-700)', fontFamily: 'monospace', marginTop: '0.25rem' }}>
-              {effectivePublicId}
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase' }}>
-              Username
-            </div>
-            <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--slate-800)', marginTop: '0.25rem' }}>
-              @{effectiveUsername}
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase' }}>
-              Account Role
-            </div>
-            <div style={{ marginTop: '0.25rem' }}>
-              <span className={`badge ${effectiveRole === 'doctor' ? 'badge-approved' : 'badge-pending'}`}>
-                {effectiveRole}
-              </span>
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase' }}>
-              Email
-            </div>
-            <div style={{ fontSize: '0.875rem', color: 'var(--slate-700)', marginTop: '0.25rem' }}>
-              {user?.email}
-            </div>
+      {!profile && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.75rem',
+          padding: '1rem',
+          background: 'var(--warning-bg, #fffbeb)',
+          border: '1px solid var(--warning-border, #fde68a)',
+          borderRadius: 'var(--radius-md)',
+          color: 'var(--warning-text, #92400e)',
+          marginBottom: '1.5rem'
+        }}>
+          <AlertCircle size={20} style={{ flexShrink: 0 }} />
+          <div style={{ fontSize: '0.875rem' }}>
+            <strong>Profile Setup in Progress:</strong> Your profile record has not yet been initialized in the database. Save your personal details below to establish your profile.
           </div>
         </div>
-        <p style={{ fontSize: '0.75rem', color: 'var(--slate-400)', marginTop: '1rem' }}>
-          Public ID, role, and username are cryptographically and database-enforced and cannot be modified.
-        </p>
+      )}
+
+      {/* Account Details */}
+      <div style={{ marginBottom: '1.75rem' }}>
+        <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--slate-900)', marginBottom: '0.5rem', textTransform: 'capitalize' }}>
+          {effectiveRole === 'doctor' ? 'Doctor' : 'Patient'}
+        </h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.9rem' }}>
+          <div>
+            <span style={{ fontWeight: 600, color: 'var(--slate-500)', marginRight: '0.5rem' }}>Username:</span>
+            <span style={{ fontWeight: 600, color: 'var(--slate-800)' }}>@{effectiveUsername}</span>
+          </div>
+          <div>
+            <span style={{ fontWeight: 600, color: 'var(--slate-500)', marginRight: '0.5rem' }}>Email:</span>
+            <span style={{ color: 'var(--slate-700)' }}>{user?.email}</span>
+          </div>
+        </div>
       </div>
 
       {/* Editable Profile Information */}
