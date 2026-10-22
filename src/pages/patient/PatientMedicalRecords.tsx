@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabaseClient';
 import { useToast } from '../../components/common/Toast';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import type { MedicalRecord } from '../../types';
-import { FileText, Eye, FileImage, File, Search, Filter } from 'lucide-react';
+import { FileText, Eye, FileImage, File, Search, Filter, AlertCircle, RefreshCw } from 'lucide-react';
 
 function getFileIcon(mimeType: string) {
   if (mimeType.startsWith('image/')) return <FileImage size={20} />;
@@ -19,33 +20,50 @@ function formatBytes(bytes: number): string {
 }
 
 export const PatientMedicalRecords: React.FC = () => {
-  const { profile } = useAuth();
+  const { profile, user, loading: authLoading } = useAuth();
   const { showToast } = useToast();
 
   const [records, setRecords] = useState<MedicalRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDoctor, setFilterDoctor] = useState('all');
   const [downloadConfirm, setDownloadConfirm] = useState<MedicalRecord | null>(null);
 
   useEffect(() => {
-    if (!profile) return;
+    if (authLoading) return;
+    const patientId = profile?.id || user?.id;
+    if (!patientId) {
+      setLoading(false);
+      setError('Patient profile not found. Please verify your profile in Settings.');
+      return;
+    }
     loadRecords();
-  }, [profile]);
+  }, [profile, user, authLoading]);
 
   const loadRecords = async () => {
+    const patientId = profile?.id || user?.id;
+    if (!patientId) {
+      setLoading(false);
+      setError('Patient profile not initialized. Please configure your profile first.');
+      return;
+    }
+
     setLoading(true);
+    setError(null);
     try {
-      const { data, error } = await supabase
+      const { data, error: fetchErr } = await supabase
         .from('medical_records')
         .select('*, doctor:profiles!medical_records_doctor_id_fkey(id, full_name, username, public_id)')
-        .eq('patient_id', profile!.id)
+        .eq('patient_id', patientId)
         .order('uploaded_at', { ascending: false });
 
-      if (error) throw error;
+      if (fetchErr) throw fetchErr;
       setRecords((data || []) as MedicalRecord[]);
     } catch (err: any) {
-      showToast(err.message || 'Failed to load records', 'error');
+      const errMsg = err?.message || 'Failed to load medical records';
+      setError(errMsg);
+      showToast(errMsg, 'error');
     } finally {
       setLoading(false);
     }
@@ -85,6 +103,38 @@ export const PatientMedicalRecords: React.FC = () => {
         </div>
       </div>
 
+      {/* Live Error Banner */}
+      {error && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '1rem',
+          padding: '1rem 1.25rem',
+          background: 'var(--danger-bg, #fef2f2)',
+          border: '1px solid var(--danger-border, #fecaca)',
+          borderRadius: 'var(--radius-md)',
+          color: 'var(--danger-text, #991b1b)',
+          marginBottom: '1.5rem',
+          flexWrap: 'wrap'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <AlertCircle size={22} style={{ flexShrink: 0 }} />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>Unable to Load Medical Records</div>
+              <div style={{ fontSize: '0.85rem', marginTop: '0.2rem', color: 'var(--slate-700)' }}>{error}</div>
+            </div>
+          </div>
+          <button
+            className="btn btn-secondary"
+            onClick={loadRecords}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', padding: '0.45rem 0.85rem' }}
+          >
+            <RefreshCw size={14} /> Try Again
+          </button>
+        </div>
+      )}
+
       {/* Filters */}
       <div style={{ display: 'flex', gap: '0.875rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
@@ -120,18 +170,26 @@ export const PatientMedicalRecords: React.FC = () => {
 
       {/* Records */}
       {loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
-          <div className="loading-spinner" style={{ width: '2rem', height: '2rem' }} />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3.5rem 1rem' }}>
+          <div className="loading-spinner" style={{ width: '2rem', height: '2rem', marginBottom: '1rem' }} />
+          <p style={{ color: 'var(--slate-500)', fontSize: '0.875rem' }}>Retrieving clinical medical records...</p>
         </div>
-      ) : filteredRecords.length === 0 ? (
+      ) : error && records.length === 0 ? null : filteredRecords.length === 0 ? (
         <div className="empty-state">
-          <FileText size={36} style={{ margin: '0 auto 0.75rem', color: 'var(--slate-300)' }} />
+          <FileText size={40} style={{ margin: '0 auto 0.75rem', color: 'var(--slate-300)' }} />
           <h3>No Records Yet</h3>
           <p>
             {records.length === 0
               ? 'Your doctors will upload records here once you have an active connection.'
               : 'No records match your search.'}
           </p>
+          {records.length === 0 && (
+            <div style={{ marginTop: '1.25rem' }}>
+              <Link to="/patient/find-doctors" className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                Find Doctors
+              </Link>
+            </div>
+          )}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>

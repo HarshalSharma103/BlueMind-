@@ -5,9 +5,13 @@ import type { DoctorProfile, PatientProfile } from '../../types';
 import { User, Shield, CheckCircle2, AlertCircle, Save } from 'lucide-react';
 
 export const Profile: React.FC = () => {
-  const { profile, user, refreshProfile } = useAuth();
+  const { profile, user, refreshProfile, loading: authLoading } = useAuth();
 
-  const [fullName, setFullName] = useState(profile?.full_name || '');
+  const effectiveRole = profile?.role || (user?.user_metadata?.role === 'doctor' ? 'doctor' : 'patient');
+  const effectiveUsername = profile?.username || user?.user_metadata?.username || user?.email?.split('@')[0] || 'User';
+  const effectivePublicId = profile?.public_id || user?.user_metadata?.public_id || (effectiveRole === 'doctor' ? `DR-${(user?.id || '000000').slice(0, 6).toUpperCase()}` : `PT-${(user?.id || '000000').slice(0, 6).toUpperCase()}`);
+
+  const [fullName, setFullName] = useState(profile?.full_name || user?.user_metadata?.full_name || '');
   const [doctorData, setDoctorData] = useState<Partial<DoctorProfile>>({});
   const [patientData, setPatientData] = useState<Partial<PatientProfile>>({});
   const [loading, setLoading] = useState(true);
@@ -15,77 +19,100 @@ export const Profile: React.FC = () => {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
-    if (!profile) return;
-    setFullName(profile.full_name);
+    if (authLoading) return;
+
+    if (profile) {
+      setFullName(profile.full_name || '');
+    } else if (user) {
+      setFullName(user.user_metadata?.full_name || user.email?.split('@')[0] || '');
+    }
 
     const loadRoleProfile = async () => {
-      setLoading(true);
-      if (profile.role === 'doctor') {
-        const { data } = await supabase
-          .from('doctor_profiles')
-          .select('*')
-          .eq('id', profile.id)
-          .single();
-        if (data) setDoctorData(data);
-      } else if (profile.role === 'patient') {
-        const { data } = await supabase
-          .from('patient_profiles')
-          .select('*')
-          .eq('id', profile.id)
-          .single();
-        if (data) setPatientData(data);
+      const targetId = profile?.id || user?.id;
+      if (!targetId) {
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+
+      setLoading(true);
+      try {
+        if (effectiveRole === 'doctor') {
+          const { data } = await supabase
+            .from('doctor_profiles')
+            .select('*')
+            .eq('id', targetId)
+            .maybeSingle();
+          if (data) setDoctorData(data);
+        } else if (effectiveRole === 'patient') {
+          const { data } = await supabase
+            .from('patient_profiles')
+            .select('*')
+            .eq('id', targetId)
+            .maybeSingle();
+          if (data) setPatientData(data);
+        }
+      } catch (err) {
+        console.warn('Error reading role-specific profile:', err);
+      } finally {
+        setLoading(false);
+      }
     };
 
     loadRoleProfile();
-  }, [profile]);
+  }, [profile, user, authLoading, effectiveRole]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile) return;
+    const targetId = profile?.id || user?.id;
+    if (!targetId) return;
+
     setSaving(true);
     setMessage(null);
 
     try {
-      // 1. Update base profile full_name
+      // 1. Upsert base profile so missing rows are automatically created
       const { error: profileError } = await supabase
         .from('profiles')
-        .update({ full_name: fullName.trim() })
-        .eq('id', profile.id);
+        .upsert({
+          id: targetId,
+          username: effectiveUsername,
+          role: effectiveRole,
+          full_name: fullName.trim(),
+          public_id: effectivePublicId
+        }, { onConflict: 'id' });
 
       if (profileError) throw profileError;
 
-      // 2. Update role specific profile
-      if (profile.role === 'doctor') {
+      // 2. Upsert role specific profile
+      if (effectiveRole === 'doctor') {
         const { error: docError } = await supabase
           .from('doctor_profiles')
-          .update({
+          .upsert({
+            id: targetId,
             specialty: doctorData.specialty || 'General Practice',
             bio: doctorData.bio || '',
             consultation_fee: Number(doctorData.consultation_fee) || 0,
             years_of_experience: Number(doctorData.years_of_experience) || 0,
             is_accepting_patients: doctorData.is_accepting_patients ?? true
-          })
-          .eq('id', profile.id);
+          }, { onConflict: 'id' });
         if (docError) throw docError;
-      } else if (profile.role === 'patient') {
+      } else if (effectiveRole === 'patient') {
         const { error: patError } = await supabase
           .from('patient_profiles')
-          .update({
+          .upsert({
+            id: targetId,
             date_of_birth: patientData.date_of_birth || null,
             gender: patientData.gender || null,
             blood_group: patientData.blood_group || null,
             emergency_contact_name: patientData.emergency_contact_name || '',
             emergency_contact_phone: patientData.emergency_contact_phone || '',
             medical_allergies: patientData.medical_allergies || ''
-          })
-          .eq('id', profile.id);
+          }, { onConflict: 'id' });
         if (patError) throw patError;
       }
 
       await refreshProfile();
-      setMessage({ type: 'success', text: 'Profile updated successfully!' });
+      setMessage({ type: 'success', text: 'Profile updated and synchronized successfully!' });
     } catch (err: unknown) {
       const errMessage = err instanceof Error ? err.message : 'Error updating profile';
       setMessage({ type: 'error', text: errMessage });
@@ -94,10 +121,11 @@ export const Profile: React.FC = () => {
     }
   };
 
-  if (!profile || loading) {
+  if (authLoading || (loading && !profile && !user)) {
     return (
       <div className="container" style={{ textAlign: 'center', padding: '4rem 1rem' }}>
-        <div className="loading-spinner" />
+        <div className="loading-spinner" style={{ margin: '0 auto 1rem' }} />
+        <p style={{ color: 'var(--slate-500)', fontSize: '0.875rem' }}>Loading profile information...</p>
       </div>
     );
   }
@@ -134,13 +162,32 @@ export const Profile: React.FC = () => {
           <Shield size={18} color="var(--primary-600)" />
           Authoritative Identity & Credentials
         </h3>
+        {!profile && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            padding: '1rem',
+            background: 'var(--warning-bg, #fffbeb)',
+            border: '1px solid var(--warning-border, #fde68a)',
+            borderRadius: 'var(--radius-md)',
+            color: 'var(--warning-text, #92400e)',
+            marginBottom: '1.5rem'
+          }}>
+            <AlertCircle size={20} style={{ flexShrink: 0 }} />
+            <div style={{ fontSize: '0.875rem' }}>
+              <strong>Profile Setup in Progress:</strong> Your profile record has not yet been initialized in the database. Save your personal details below to establish your profile.
+            </div>
+          </div>
+        )}
+
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
           <div>
             <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase' }}>
               Public ID
             </div>
             <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--primary-700)', fontFamily: 'monospace', marginTop: '0.25rem' }}>
-              {profile.public_id}
+              {effectivePublicId}
             </div>
           </div>
           <div>
@@ -148,7 +195,7 @@ export const Profile: React.FC = () => {
               Username
             </div>
             <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--slate-800)', marginTop: '0.25rem' }}>
-              @{profile.username}
+              @{effectiveUsername}
             </div>
           </div>
           <div>
@@ -156,8 +203,8 @@ export const Profile: React.FC = () => {
               Account Role
             </div>
             <div style={{ marginTop: '0.25rem' }}>
-              <span className={`badge ${profile.role === 'doctor' ? 'badge-approved' : 'badge-pending'}`}>
-                {profile.role}
+              <span className={`badge ${effectiveRole === 'doctor' ? 'badge-approved' : 'badge-pending'}`}>
+                {effectiveRole}
               </span>
             </div>
           </div>
@@ -194,7 +241,7 @@ export const Profile: React.FC = () => {
           />
         </div>
 
-        {profile.role === 'doctor' && (
+        {effectiveRole === 'doctor' && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <div className="form-group">
@@ -265,7 +312,7 @@ export const Profile: React.FC = () => {
           </>
         )}
 
-        {profile.role === 'patient' && (
+        {effectiveRole === 'patient' && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <div className="form-group">

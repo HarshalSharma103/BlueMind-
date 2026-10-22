@@ -34,13 +34,71 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
       if (error) {
-        console.error('Error fetching profile:', error.message);
-        setProfile(null);
-      } else {
+        console.warn('Profile fetch note:', error.message);
+      }
+
+      if (data) {
         setProfile(data as UserProfile);
+        return;
+      }
+
+      // If profile is missing from Supabase profiles table, attempt to recover/upsert from auth user data
+      const { data: userData } = await supabase.auth.getUser();
+      const authUser = userData?.user;
+
+      if (authUser && authUser.id === userId) {
+        const meta = authUser.user_metadata || {};
+        const role: AppRole = meta.role === 'doctor' ? 'doctor' : 'patient';
+        const username = meta.username || authUser.email?.split('@')[0] || `user_${userId.slice(0, 6)}`;
+        const fullName = meta.full_name || username;
+        const publicId = meta.public_id || (role === 'doctor' ? `DR-${userId.slice(0, 6).toUpperCase()}` : `PT-${userId.slice(0, 6).toUpperCase()}`);
+
+        // Try upserting missing profile to Supabase
+        const { data: upsertedProfile } = await supabase
+          .from('profiles')
+          .upsert({
+            id: userId,
+            username,
+            role,
+            full_name: fullName,
+            public_id: publicId
+          }, { onConflict: 'id' })
+          .select()
+          .maybeSingle();
+
+        // Also ensure role-specific table row exists
+        if (role === 'doctor') {
+          await supabase.from('doctor_profiles').upsert({
+            id: userId,
+            specialty: meta.specialty || 'General Practice',
+            consultation_fee: 0,
+            years_of_experience: 0,
+            is_accepting_patients: true
+          }, { onConflict: 'id' }).select().maybeSingle();
+        } else {
+          await supabase.from('patient_profiles').upsert({
+            id: userId
+          }, { onConflict: 'id' }).select().maybeSingle();
+        }
+
+        if (upsertedProfile) {
+          setProfile(upsertedProfile as UserProfile);
+        } else {
+          // Provide synthesized profile so app and profile pages never stay blank
+          setProfile({
+            id: userId,
+            username,
+            public_id: publicId,
+            role,
+            full_name: fullName,
+            created_at: authUser.created_at || new Date().toISOString()
+          });
+        }
+      } else {
+        setProfile(null);
       }
     } catch (err) {
       console.error('Unexpected error fetching profile:', err);

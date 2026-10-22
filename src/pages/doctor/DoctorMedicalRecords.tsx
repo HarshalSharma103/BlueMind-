@@ -6,7 +6,7 @@ import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import type { MedicalRecord, UserProfile } from '../../types';
 import {
   FileText, Upload, Eye, FileImage, File, Search,
-  AlertCircle, Filter
+  AlertCircle, Filter, RefreshCw
 } from 'lucide-react';
 
 const ALLOWED_MIME_TYPES: Record<string, string> = {
@@ -37,13 +37,14 @@ interface ActivePatient {
 }
 
 export const DoctorMedicalRecords: React.FC = () => {
-  const { profile } = useAuth();
+  const { profile, user, loading: authLoading } = useAuth();
   const { showToast } = useToast();
 
   const [records, setRecords] = useState<MedicalRecord[]>([]);
   const [activePatients, setActivePatients] = useState<ActivePatient[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Filters
   const [filterPatient, setFilterPatient] = useState('all');
@@ -62,18 +63,32 @@ export const DoctorMedicalRecords: React.FC = () => {
   const [downloadConfirm, setDownloadConfirm] = useState<MedicalRecord | null>(null);
 
   useEffect(() => {
-    if (!profile) return;
+    if (authLoading) return;
+    const docId = profile?.id || user?.id;
+    if (!docId) {
+      setLoading(false);
+      setError('Doctor profile not found. Please verify your profile in Settings.');
+      return;
+    }
     loadData();
-  }, [profile]);
+  }, [profile, user, authLoading]);
 
   const loadData = async () => {
+    const docId = profile?.id || user?.id;
+    if (!docId) {
+      setLoading(false);
+      setError('Doctor profile not found.');
+      return;
+    }
+
     setLoading(true);
+    setError(null);
     try {
       // Load active patients
       const { data: rels } = await supabase
         .from('doctor_patient_relationships')
         .select('id, patient_id, profiles!doctor_patient_relationships_patient_id_fkey(*)')
-        .eq('doctor_id', profile!.id)
+        .eq('doctor_id', docId)
         .eq('status', 'ACTIVE');
 
       const patients: ActivePatient[] = (rels || []).map((r: any) => ({
@@ -83,16 +98,18 @@ export const DoctorMedicalRecords: React.FC = () => {
       setActivePatients(patients);
 
       // Load all records
-      const { data: recs, error } = await supabase
+      const { data: recs, error: fetchErr } = await supabase
         .from('medical_records')
         .select('*, patient:profiles!medical_records_patient_id_fkey(id, full_name, username, public_id)')
-        .eq('doctor_id', profile!.id)
+        .eq('doctor_id', docId)
         .order('uploaded_at', { ascending: false });
 
-      if (error) throw error;
+      if (fetchErr) throw fetchErr;
       setRecords((recs || []) as MedicalRecord[]);
     } catch (err: any) {
-      showToast(err.message || 'Failed to load records', 'error');
+      const errMsg = err?.message || 'Failed to load records';
+      setError(errMsg);
+      showToast(errMsg, 'error');
     } finally {
       setLoading(false);
     }
@@ -364,6 +381,38 @@ export const DoctorMedicalRecords: React.FC = () => {
         </div>
       )}
 
+      {/* Live Error Banner */}
+      {error && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '1rem',
+          padding: '1rem 1.25rem',
+          background: 'var(--danger-bg, #fef2f2)',
+          border: '1px solid var(--danger-border, #fecaca)',
+          borderRadius: 'var(--radius-md)',
+          color: 'var(--danger-text, #991b1b)',
+          marginBottom: '1.5rem',
+          flexWrap: 'wrap'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <AlertCircle size={22} style={{ flexShrink: 0 }} />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>Unable to Load Records</div>
+              <div style={{ fontSize: '0.85rem', marginTop: '0.2rem', color: 'var(--slate-700)' }}>{error}</div>
+            </div>
+          </div>
+          <button
+            className="btn btn-secondary"
+            onClick={loadData}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', padding: '0.45rem 0.85rem' }}
+          >
+            <RefreshCw size={14} /> Try Again
+          </button>
+        </div>
+      )}
+
       {/* Filters */}
       <div style={{ display: 'flex', gap: '0.875rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
@@ -397,14 +446,15 @@ export const DoctorMedicalRecords: React.FC = () => {
 
       {/* Records List */}
       {loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
-          <div className="loading-spinner" style={{ width: '2rem', height: '2rem' }} />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3.5rem 1rem' }}>
+          <div className="loading-spinner" style={{ width: '2rem', height: '2rem', marginBottom: '1rem' }} />
+          <p style={{ color: 'var(--slate-500)', fontSize: '0.875rem' }}>Retrieving patient medical records...</p>
         </div>
-      ) : filteredRecords.length === 0 ? (
+      ) : error && records.length === 0 ? null : filteredRecords.length === 0 ? (
         <div className="empty-state">
-          <FileText size={36} style={{ margin: '0 auto 0.75rem', color: 'var(--slate-300)' }} />
+          <FileText size={40} style={{ margin: '0 auto 0.75rem', color: 'var(--slate-300)' }} />
           <h3>No Records Found</h3>
-          <p>{records.length === 0 ? 'Upload the first medical record for a patient.' : 'No records match your filters.'}</p>
+          <p>{records.length === 0 ? 'Upload the first medical record for an active patient.' : 'No records match your active search filters.'}</p>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
