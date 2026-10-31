@@ -70,18 +70,30 @@ export const Profile: React.FC = () => {
     setMessage(null);
 
     try {
-      // 1. Upsert base profile so missing rows are automatically created
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .upsert({
-          id: targetId,
-          username: effectiveUsername,
-          role: effectiveRole,
-          full_name: fullName.trim(),
-          public_id: effectivePublicId
-        }, { onConflict: 'id' });
+      // 1. Update full_name if base profile exists, otherwise insert initial row
+      if (profile) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({
+            full_name: fullName.trim(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', targetId);
 
-      if (profileError) throw profileError;
+        if (profileError) throw profileError;
+      } else {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert({
+            id: targetId,
+            username: effectiveUsername,
+            role: effectiveRole,
+            full_name: fullName.trim(),
+            public_id: effectivePublicId
+          }, { onConflict: 'id' });
+
+        if (profileError) throw profileError;
+      }
 
       // 2. Upsert role specific profile
       if (effectiveRole === 'doctor') {
@@ -93,7 +105,8 @@ export const Profile: React.FC = () => {
             bio: doctorData.bio || '',
             consultation_fee: Number(doctorData.consultation_fee) || 0,
             years_of_experience: Number(doctorData.years_of_experience) || 0,
-            is_accepting_patients: doctorData.is_accepting_patients ?? true
+            is_accepting_patients: doctorData.is_accepting_patients ?? true,
+            updated_at: new Date().toISOString()
           }, { onConflict: 'id' });
         if (docError) throw docError;
       } else if (effectiveRole === 'patient') {
@@ -106,7 +119,8 @@ export const Profile: React.FC = () => {
             blood_group: patientData.blood_group || null,
             emergency_contact_name: patientData.emergency_contact_name || '',
             emergency_contact_phone: patientData.emergency_contact_phone || '',
-            medical_allergies: patientData.medical_allergies || ''
+            medical_allergies: patientData.medical_allergies || '',
+            updated_at: new Date().toISOString()
           }, { onConflict: 'id' });
         if (patError) throw patError;
       }
@@ -250,7 +264,7 @@ export const Profile: React.FC = () => {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <div className="form-group">
-                <label className="form-label" htmlFor="fee">Consultation Fee ($)</label>
+                <label className="form-label" htmlFor="fee">Hourly Consultation Fee (₹)</label>
                 <input
                   id="fee"
                   type="number"
