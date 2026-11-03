@@ -73,15 +73,15 @@ export const DoctorPatients: React.FC = () => {
   // Handle connection request accept/reject
   const handleRespondRequest = async (requestId: string, accept: boolean) => {
     try {
-      const { error } = await supabase
-        .from('connection_requests')
-        .update({ status: accept ? 'ACCEPTED' : 'REJECTED' })
-        .eq('id', requestId);
-
+      const { error } = await supabase.rpc('respond_to_connection_request', {
+        p_request_id: requestId,
+        p_accept: accept,
+      });
       if (error) throw error;
+
       setFeedback({
         type: 'success',
-        text: accept ? 'Patient connection accepted and active relationship established.' : 'Connection request rejected.'
+        text: accept ? 'Patient connection accepted and relationship established.' : 'Connection request rejected.'
       });
       await loadDoctorData();
     } catch (err: unknown) {
